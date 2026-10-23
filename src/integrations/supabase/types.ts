@@ -140,6 +140,18 @@ export type Database = {
         }
         Relationships: []
       }
+      probe_backend_identity: {
+        Row: {
+          id: number | null
+        }
+        Insert: {
+          id?: number | null
+        }
+        Update: {
+          id?: number | null
+        }
+        Relationships: []
+      }
       promo_codes: {
         Row: {
           active: boolean
