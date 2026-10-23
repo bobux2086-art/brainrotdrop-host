@@ -3,13 +3,12 @@ import { ArrowUpRight, Search, TrendingUp } from "lucide-react"
 import { toast } from "sonner"
 import { BRAINROTS, BRAINROT_BY_ID } from "@/data/brainrots"
 import { useStore } from "@/lib/store"
+import { MAX_CHANCE, PRESETS, pickForPreset, upgradeChance, type Preset } from "@/data/upgrader"
 import { haptic, notify } from "@/lib/telegram"
 import { cn } from "@/lib/utils"
 import { SectionTitle } from "./CasesView"
 import { BrainrotCard, BrainrotImg, Coin, CoinAmount, IncomeTag, formatCoins } from "./ui"
 
-const HOUSE = 0.95
-const MAX_CHANCE = 0.8
 const R = 92
 const CIRC = 2 * Math.PI * R
 
@@ -19,6 +18,7 @@ export function UpgraderView() {
   const [extraCoins, setExtraCoins] = useState(0)
   const [targetId, setTargetId] = useState<string | null>(null)
   const [query, setQuery] = useState("")
+  const [presetId, setPresetId] = useState<string | null>(null)
   const [rotation, setRotation] = useState(0)
   const [spinning, setSpinning] = useState(false)
   const [result, setResult] = useState<"win" | "lose" | null>(null)
@@ -31,17 +31,35 @@ export function UpgraderView() {
   const inputBrainrot = input ? BRAINROT_BY_ID[input.brainrotId] : null
   const inputValue = (inputBrainrot?.price ?? 0) + extraCoins
   const target = targetId ? BRAINROT_BY_ID[targetId] : null
-  const chance = target && inputValue > 0 ? Math.min(MAX_CHANCE, (inputValue / target.price) * HOUSE) : 0
+  const chance = target ? upgradeChance(inputValue, target.price) : 0
 
   const targets = useMemo(
     () =>
-      BRAINROTS.filter((b) => b.price > Math.max(inputValue, 1) && b.name.toLowerCase().includes(query.toLowerCase())).slice(0, 30),
+      BRAINROTS.filter((b) => b.price > Math.max(inputValue, 1) && b.name.toLowerCase().includes(query.toLowerCase()))
+        .sort((a, b) => a.price - b.price)
+        .slice(0, 60),
     [inputValue, query],
   )
 
   const liveMultiplier = target && inputValue ? target.price / inputValue : 0
   const shownChance = locked ? locked.chance : chance
   const multiplier = locked ? locked.multiplier : liveMultiplier
+  const applyPreset = (p: Preset) => {
+    if (spinning) return
+    if (inputValue <= 0) {
+      toast.error("Сначала выбери предмет или добавь монеты")
+      return
+    }
+    const pick = pickForPreset(BRAINROTS, p, inputValue)
+    if (!pick) {
+      toast.error("Нет подходящего брейнрота для этой ставки")
+      return
+    }
+    haptic()
+    setPresetId(p.id)
+    setTargetId(pick.id)
+    resetLock()
+  }
   const resetLock = () => {
     setLocked(null)
     setResult(null)
@@ -137,6 +155,33 @@ export function UpgraderView() {
           </div>
         </div>
 
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-white/45">
+            <span>Быстрый выбор цели</span>
+            <span>макс. шанс {Math.round(MAX_CHANCE * 100)}%</span>
+          </div>
+          <div className="grid grid-cols-7 gap-1.5">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                disabled={spinning}
+                onClick={() => applyPreset(p)}
+                className={cn(
+                  "rounded-xl border py-2 text-xs font-extrabold transition-all active:scale-95 disabled:opacity-40",
+                  presetId === p.id
+                    ? "border-[var(--bd-lime)] bg-[var(--bd-lime)]/15 text-[var(--bd-lime)] shadow-[0_0_12px_rgba(182,255,59,.35)]"
+                    : p.kind === "mult"
+                      ? "border-white/10 bg-white/5 text-white/80 hover:border-white/25"
+                      : "border-[var(--bd-gold)]/30 bg-[var(--bd-gold)]/10 text-[var(--bd-gold)] hover:border-[var(--bd-gold)]/60",
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button type="button" className="bd-btn mt-4 w-full py-3.5 text-base" disabled={!target || inputValue <= 0 || spinning} onClick={go}>
           {spinning ? "Апгрейдим…" : target ? `Апгрейд · шанс ${(shownChance * 100).toFixed(2)}%` : "Выбери цель"}
         </button>
@@ -158,6 +203,7 @@ export function UpgraderView() {
                     if (spinning) return
                     haptic()
                     setInputUid(inputUid === i.uid ? null : i.uid)
+                    setPresetId(null)
                     resetLock()
                   }}
                 />
@@ -182,11 +228,12 @@ export function UpgraderView() {
               b={b}
               compact
               selected={targetId === b.id}
-              chance={inputValue ? Math.min(MAX_CHANCE, (inputValue / b.price) * HOUSE) : undefined}
+              chance={inputValue ? upgradeChance(inputValue, b.price) : undefined}
               onClick={() => {
                 if (spinning) return
                 haptic()
                 setTargetId(b.id)
+                setPresetId(null)
                 resetLock()
               }}
             />
