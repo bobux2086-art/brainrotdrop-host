@@ -3,10 +3,9 @@ import { z } from "zod"
 
 import { authTelegram } from "./tg-auth"
 
-export const REQUIRED_CHANNEL = "@BrainrotDroptgk"
-export const REQUIRED_CHANNEL_URL = "https://t.me/BrainrotDroptgk"
+import { REQUIRED_CHANNEL, REQUIRED_CHANNEL_URL, isSubscribedMember } from "./subscription-rules"
 
-const MEMBER_STATUSES = new Set(["creator", "administrator", "member", "restricted"])
+export { REQUIRED_CHANNEL, REQUIRED_CHANNEL_URL }
 
 /** Checks via Bot API getChatMember that the Telegram user is subscribed to the channel. The bot must be an admin of the channel. */
 export const checkSubscription = createServerFn({ method: "POST" })
@@ -30,7 +29,7 @@ export const checkSubscription = createServerFn({ method: "POST" })
         return { ok: false as const, subscribed: false, error: "Не удалось проверить подписку, попробуй позже" }
       }
       const status = body.result?.status ?? ""
-      const subscribed = MEMBER_STATUSES.has(status) && (status !== "restricted" || body.result?.is_member === true)
+      const subscribed = isSubscribedMember(status, body.result?.is_member)
       return { ok: true as const, subscribed, error: null }
     } catch (e) {
       console.error("getChatMember error", e)
