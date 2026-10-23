@@ -5,7 +5,8 @@ import { toast } from "sonner"
 import { CASES, TAG, rollCase, sortedEntries, type CaseDef, type Drop } from "@/data/cases"
 import { MINI_APP_LINK } from "@/data/fixtures"
 import { useStore } from "@/lib/store"
-import { haptic, notify, openShare } from "@/lib/telegram"
+import { haptic, notify, openShare, tg } from "@/lib/telegram"
+import { REQUIRED_CHANNEL_URL, checkSubscription } from "@/lib/subscription.functions"
 import { cn } from "@/lib/utils"
 import { useLive } from "@/lib/live"
 import { play } from "@/lib/sound"
@@ -202,6 +203,37 @@ function CaseModal({ c, onClose }: { c: CaseDef; onClose: () => void }) {
   const cooldownLeft = readyAt - now
   const gate = gateReason(c, store)
   const gifted = store.freeCases[c.id] ?? 0
+  const needsSub = c.kind === "free" && gifted === 0
+  const [subscribed, setSubscribed] = useState<boolean | null>(null)
+  const [checking, setChecking] = useState(false)
+  const verifySub = async (silent = false) => {
+    const app = tg()
+    if (!app) {
+      setSubscribed(false)
+      if (!silent) toast.error("Открой приложение в Telegram")
+      return false
+    }
+    setChecking(true)
+    try {
+      const r = await checkSubscription({ data: { initData: app.initData } })
+      setSubscribed(r.subscribed)
+      if (!silent) {
+        if (r.subscribed) toast.success("Подписка подтверждена!")
+        else toast.error(r.error ?? "Ты ещё не подписан на канал")
+      }
+      return r.subscribed
+    } catch {
+      setSubscribed(false)
+      if (!silent) toast.error("Не удалось проверить подписку")
+      return false
+    } finally {
+      setChecking(false)
+    }
+  }
+  useEffect(() => {
+    if (needsSub) void verifySub(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsSub])
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -211,8 +243,13 @@ function CaseModal({ c, onClose }: { c: CaseDef; onClose: () => void }) {
     }
   }, [])
 
-  const spin = () => {
-    if (spinning) return
+  const spin = async () => {
+    if (spinning || checking) return
+    if (needsSub && !(await verifySub(true))) {
+      notify("error")
+      toast.error("Подпишись на канал, чтобы открыть бесплатный кейс")
+      return
+    }
     if (gifted > 0) {
       if (!store.consumeFreeCase(c.id)) return
     } else if (c.kind === "paid") {
@@ -265,7 +302,7 @@ function CaseModal({ c, onClose }: { c: CaseDef; onClose: () => void }) {
   }
 
   const disabled =
-    spinning || (gifted > 0 ? false : c.kind === "paid" ? !store.canAfford(c.price) : Boolean(gate) || cooldownLeft > 0)
+    spinning || checking || (needsSub && subscribed !== true) || (gifted > 0 ? false : c.kind === "paid" ? !store.canAfford(c.price) : Boolean(gate) || cooldownLeft > 0)
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#07040f]/95 backdrop-blur-sm">
@@ -307,6 +344,32 @@ function CaseModal({ c, onClose }: { c: CaseDef; onClose: () => void }) {
         {won && <WinBanner drop={won} mutation={wonMut} onSell={sellWon} onClose={() => setWon(null)} />}
 
         <div className="mt-5 space-y-3">
+          {needsSub && subscribed !== true && (
+            <div className="bd-panel space-y-2 p-4 text-sm">
+              <div className="flex items-center gap-2 font-bold">
+                <Lock className="size-4 text-sky-400" /> Подпишись на наш канал
+              </div>
+              <p className="text-white/60">
+                Бесплатный кейс доступен только подписчикам <b className="text-white">@BrainrotDroptgk</b>. Подпишись и нажми «Проверить».
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="bd-btn flex-1 py-2 text-xs font-bold"
+                  onClick={() => {
+                    const app = tg()
+                    if (app) app.openTelegramLink(REQUIRED_CHANNEL_URL)
+                    else window.open(REQUIRED_CHANNEL_URL, "_blank", "noopener")
+                  }}
+                >
+                  Подписаться
+                </button>
+                <button type="button" className="bd-btn-ghost flex-1 py-2 text-xs font-bold" disabled={checking} onClick={() => verifySub()}>
+                  {checking ? "Проверяем…" : "Проверить"}
+                </button>
+              </div>
+            </div>
+          )}
           {gate ? (
             <GateNotice c={c} />
           ) : c.kind !== "paid" && cooldownLeft > 0 ? (
