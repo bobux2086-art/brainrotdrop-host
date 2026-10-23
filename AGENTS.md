@@ -23,3 +23,5 @@
 - Case chances/contents: static defaults live in `src/data/cases.ts`; owner edits are stored as `app_settings.case_overrides` and applied in place via `buildEntries`/`applyCaseOverrides`. Why: every client sees the same odds without redeploying.
 - Deposit/withdraw requests are stored server-side in `transfer_requests` (keyed by player tg_id + client id); clients poll and apply admin decisions once. Why: the owner must review them and the bot notifies both sides.
 - Sounds are synthesized in `src/lib/sound.ts` and fired from `notify()`/medium `haptic()`; light taps stay silent. Why: owner asked for event sounds but no click sounds.
+- Upgrader odds (max chance, house edge) and quick-pick presets live in src/data/upgrader.ts as pure functions. Why: one place for the rules, covered by tests.
+- The free case requires a Telegram channel subscription verified server-side via Bot API getChatMember (src/lib/subscription.functions.ts). Why: client-side checks are trivially bypassed; the bot must be a channel admin.
